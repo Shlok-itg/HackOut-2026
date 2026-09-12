@@ -63,7 +63,7 @@ selected_site = st.sidebar.selectbox(
 )
 
 forecast_hours = st.sidebar.selectbox(
-    "Forecast Horizon",
+    "Forecast Horizon (24 Hrs, 48 Hrs, 72 Hrs)",
     [24, 48, 72],
     index=0
 )
@@ -109,6 +109,10 @@ irradiation = st.sidebar.slider(
     value=500.0,
     step=10.0
 )
+st.sidebar.caption(
+    f"Current scenario: "
+    f"{irradiation:.0f} W/m²"
+)
 if irradiation < 200:
     st.sidebar.caption(
         "Low sunlight scenario"
@@ -125,16 +129,12 @@ else:
     )
 
 st.sidebar.divider()
-
-
-st.sidebar.divider()
-
-st.sidebar.caption(
-    "Adjust the What-If weather controls "
-    "to update the forecast automatically."
+#automatic plot update on slider change
+run_forecast = st.sidebar.button(
+    "⚡ Generate Forecast",
+    #use_container_width=True
 )
-
-run_forecast = True
+run_forecast=True
 
 
 # ============================================================
@@ -332,24 +332,24 @@ if run_forecast:
     st.subheader(
         "Plant Capacity Utilization"
     )
+    peak_utilization = float(
+    maximum_forecast / max_capacity
+)
 
-
-    peak_utilization = (
-        maximum_forecast
-        / max_capacity
-    )
-
+    progress_value = min(
+    float(peak_utilization),
+    1.0
+)
 
     st.progress(
-        min(peak_utilization, 1.0)
-    )
+    progress_value
+)
 
 
     st.caption(
-        f"Peak forecast utilization: "
-        f"{peak_utilization * 100:.1f}% "
-        f"of {max_capacity:.1f} MW capacity"
-    )
+    f"Peak forecast utilization: "
+    f"{float(peak_utilization) * 100:.1f}% "
+    f"of {float(max_capacity):.1f} MW capacity")
 
 
     if maximum_forecast >= max_capacity:
@@ -455,48 +455,66 @@ if run_forecast:
 
 
     fig.add_trace(
-        go.Scatter(
-            x=baseline["Timestamp"],
-            y=baseline["Predicted_MW"],
-            mode="lines+markers",
-            name="Baseline Forecast"
+    go.Scatter(
+        x=baseline["Timestamp"],
+        y=baseline["Predicted_MW"],
+        mode="lines+markers",
+        name="Baseline Forecast",
+        line=dict(
+            color="#002FFF",
+            width=3
+        ),
+        marker=dict(
+            size=6
         )
     )
+)
 
 
     fig.add_trace(
-        go.Scatter(
-            x=what_if["Timestamp"],
-            y=what_if["Predicted_MW"],
-            mode="lines+markers",
-            name="What-If Forecast"
+    go.Scatter(
+        x=what_if["Timestamp"],
+        y=what_if["Predicted_MW"],
+        mode="lines+markers",
+        name="What-If Forecast",
+        line=dict(
+            color="#FFB000",
+            width=3
+        ),
+        marker=dict(
+            size=6
         )
     )
+)
 
 
     fig.add_trace(
-        go.Scatter(
-            x=baseline["Timestamp"],
-            y=baseline["Upper_MW"],
-            mode="lines",
-            line=dict(width=0),
-            showlegend=False,
-            name="Baseline Upper"
+    go.Scatter(
+        x=baseline["Timestamp"],
+        y=baseline["Upper_MW"],
+        mode="lines",
+        name="Upper Confidence",
+        line=dict(
+            color="rgba(0, 229, 255, 0.6)",
+            width=1,
+            dash="dash"
         )
     )
-
+)
 
     fig.add_trace(
-        go.Scatter(
-            x=baseline["Timestamp"],
-            y=baseline["Lower_MW"],
-            mode="lines",
-            fill="tonexty",
-            line=dict(width=0),
-            showlegend=False,
-            name="Baseline Confidence"
+    go.Scatter(
+        x=baseline["Timestamp"],
+        y=baseline["Lower_MW"],
+        mode="lines",
+        name="Lower Confidence",
+        line=dict(
+            color="rgba(0, 229, 255, 0.6)",
+            width=1,
+            dash="dash"
         )
     )
+)
 
 
     fig.add_hline(

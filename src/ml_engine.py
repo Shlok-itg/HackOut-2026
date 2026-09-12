@@ -247,21 +247,81 @@ class RenewableForecastModel:
                     f"Missing weather column: {column}"
                 )
 
+        # ----------------------------------------------------
+        # Prepare hourly historical weather
+        # ----------------------------------------------------
+
         history = df.copy()
 
         history["Timestamp"] = pd.to_datetime(
             history["Timestamp"]
         )
 
-        hourly_weather = (
+        history = history.sort_values(
+            "Timestamp"
+        )
+
+        hourly_history = (
             history
-            .groupby("Hour")[weather_columns]
+            .set_index("Timestamp")[weather_columns]
+            .resample("1h")
             .mean()
         )
 
+        hourly_history = (
+            hourly_history
+            .interpolate(
+                method="linear",
+                limit_direction="both"
+            )
+        )
+
+        # ----------------------------------------------------
+        # Find complete historical days with useful
+        # solar activity.
+        # ----------------------------------------------------
+
+        daily_irradiation = (
+            hourly_history["IRRADIATION"]
+            .resample("1D")
+            .sum()
+        )
+
+        valid_days = daily_irradiation[
+            daily_irradiation > 0
+        ].index
+
+        if len(valid_days) == 0:
+            raise ValueError(
+                "No historical daylight data was found."
+            )
+
+        # Use the most recent available daylight days.
+        # Number of days depends on forecast horizon.
+        days_needed = hours // 24
+
+        selected_days = list(
+            valid_days[-days_needed:]
+        )
+
+        # If fewer days are available, repeat the
+        # latest valid day only as a fallback.
+        while len(selected_days) < days_needed:
+            selected_days.insert(
+                0,
+                selected_days[-1]
+            )
+
+        # ----------------------------------------------------
+        # Build future timestamps
+        # ----------------------------------------------------
+
         last_timestamp = (
-            history["Timestamp"]
-            .max()
+            hourly_history.index.max()
+        )
+
+        last_timestamp = (
+            last_timestamp.floor("h")
         )
 
         future_timestamps = pd.date_range(
@@ -273,6 +333,78 @@ class RenewableForecastModel:
         future = pd.DataFrame({
             "Timestamp": future_timestamps
         })
+
+        # ----------------------------------------------------
+        # Create day-by-day weather forecast
+        # ----------------------------------------------------
+
+        weather_blocks = []
+
+        for day in selected_days:
+
+            day_start = pd.Timestamp(day)
+
+            day_end = (
+                day_start
+                + pd.Timedelta(days=1)
+            )
+
+            day_data = hourly_history.loc[
+                (hourly_history.index >= day_start)
+                &
+                (hourly_history.index < day_end)
+            ].copy()
+
+            day_data = (
+                day_data
+                .reindex(
+                    pd.date_range(
+                        start=day_start,
+                        periods=24,
+                        freq="1h"
+                    )
+                )
+            )
+
+            day_data = (
+                day_data
+                .interpolate(
+                    method="linear",
+                    limit_direction="both"
+                )
+            )
+
+            weather_blocks.append(
+                day_data.reset_index(drop=True)
+            )
+
+        recent_weather = pd.concat(
+            weather_blocks,
+            ignore_index=True
+        )
+
+        recent_weather = recent_weather.iloc[
+            :hours
+        ].copy()
+
+        # Safety fallback
+        if len(recent_weather) < hours:
+
+            repeats = int(
+                np.ceil(
+                    hours
+                    / len(recent_weather)
+                )
+            )
+
+            recent_weather = pd.concat(
+                [recent_weather] * repeats,
+                ignore_index=True
+            ).iloc[:hours]
+
+        # ----------------------------------------------------
+        # Time features
+        # ----------------------------------------------------
 
         future["Hour"] = (
             future["Timestamp"].dt.hour
@@ -302,52 +434,125 @@ class RenewableForecastModel:
             2 * np.pi * future["Month"] / 12
         )
 
-        future[
-            weather_columns
-        ] = future["Hour"].map(
-            lambda hour: hourly_weather.loc[hour]
-        ).apply(
-            pd.Series
-        )
+        # ----------------------------------------------------
+        # Historical weather sequence
+        # ----------------------------------------------------
+
+        for column in weather_columns:
+
+            future[column] = (
+                recent_weather[column]
+                .to_numpy()
+            )
+
+        # ----------------------------------------------------
+        # What-If overrides
+        # ----------------------------------------------------
 
         if weather_overrides:
 
             if "AMBIENT_TEMPERATURE" in weather_overrides:
+
                 future["AMBIENT_TEMPERATURE"] = float(
-                    weather_overrides["AMBIENT_TEMPERATURE"]
+                    weather_overrides[
+                        "AMBIENT_TEMPERATURE"
+                    ]
                 )
 
             if "MODULE_TEMPERATURE" in weather_overrides:
+
                 future["MODULE_TEMPERATURE"] = float(
-                    weather_overrides["MODULE_TEMPERATURE"]
+                    weather_overrides[
+                        "MODULE_TEMPERATURE"
+                    ]
                 )
 
             if "IRRADIATION" in weather_overrides:
 
-                irradiation_value = float(
-                    weather_overrides["IRRADIATION"]
+                target_irradiation = (float(weather_overrides["IRRADIATION"])/1000.0
+)
+
+                daylight_mask = (future["IRRADIATION"] > 0.001)
+
+                # Fallback daylight definition
+                if not daylight_mask.any():
+
+                    daylight_mask = (
+                        (future["Hour"] >= 6)
+                        &
+                        (future["Hour"] <= 18)
+                    )
+
+                # Store original daylight profile
+                original_daylight = (
+                    future.loc[
+                        daylight_mask,
+                        "IRRADIATION"
+                    ].copy()
                 )
 
-                daylight_mask = (
-                    future["Hour"] >= 6
-                ) & (
-                    future["Hour"] <= 18
-                )
+                if (
+                    len(original_daylight) > 0
+                    and original_daylight.mean() > 0
+                ):
 
-                future.loc[
-                    daylight_mask,
-                    "IRRADIATION"
-                ] = irradiation_value
+                    scale = (
+                        target_irradiation
+                        / original_daylight.mean()
+                    )
 
+                    future.loc[
+                        daylight_mask,
+                        "IRRADIATION"
+                    ] = (
+                        original_daylight
+                        * scale
+                    )
+
+                else:
+
+                    future.loc[
+                        daylight_mask,
+                        "IRRADIATION"
+                    ] = target_irradiation
+
+                # Night must remain zero
                 future.loc[
                     ~daylight_mask,
                     "IRRADIATION"
                 ] = 0.0
 
+        # ----------------------------------------------------
+        # Physical bounds
+        # ----------------------------------------------------
+
         future["IRRADIATION"] = (
             future["IRRADIATION"]
-            .clip(lower=0)
+            .clip(
+                lower=0,
+                upper=1.2
+            )
         )
+
+        future["AMBIENT_TEMPERATURE"] = (
+            future["AMBIENT_TEMPERATURE"]
+            .clip(
+                lower=0,
+                upper=60
+            )
+        )
+
+        future["MODULE_TEMPERATURE"] = (
+            future["MODULE_TEMPERATURE"]
+            .clip(
+                lower=0,
+                upper=90
+            )
+        )
+
+        # ----------------------------------------------------
+        # XGBoost prediction
+        # ----------------------------------------------------
 
         features = future[
             FEATURE_COLUMNS
@@ -368,6 +573,33 @@ class RenewableForecastModel:
         future["Upper_MW"] = (
             forecast["upper_bound"]
         )
+
+        # ----------------------------------------------------
+        # Solar night-time constraint
+        # ----------------------------------------------------
+
+        night_mask = (
+            future["IRRADIATION"] <= 0.001
+        )
+
+        future.loc[
+            night_mask,
+            "Predicted_MW"
+        ] = 0.0
+
+        future.loc[
+            night_mask,
+            "Lower_MW"
+        ] = 0.0
+
+        future.loc[
+            night_mask,
+            "Upper_MW"
+        ] = 0.0
+
+        # ----------------------------------------------------
+        # Forecast hour index
+        # ----------------------------------------------------
 
         future["Forecast_Hour"] = (
             np.arange(1, hours + 1)
