@@ -223,3 +223,5 @@ data/*.parquet
 data/*.xls
 data/*.xlsx
 data/*.pdf
+data/*.csv
+!data/synthetic_historical.csv
