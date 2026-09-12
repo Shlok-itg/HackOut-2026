@@ -1,0 +1,10 @@
+{
+    "Western_Region_Solar_Park": {
+        "max_capacity_mw": 50.0,
+        "curtailment_warning_threshold": 0.85
+    },
+    "Southern_Region_Wind_Farm": {
+        "max_capacity_mw": 100.0,
+        "curtailment_warning_threshold": 0.90
+    }
+}

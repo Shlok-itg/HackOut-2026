@@ -215,6 +215,11 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
+# Streamlit
 .streamlit/secrets.toml
-data/*.csv
+
+# Ignore large/generated data files
 data/*.parquet
+data/*.xls
+data/*.xlsx
+data/*.pdf
