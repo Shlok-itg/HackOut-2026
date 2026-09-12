@@ -225,3 +225,10 @@ data/*.xlsx
 data/*.pdf
 data/*.csv
 !data/synthetic_historical.csv
+# Development / temporary files
+test_backend.py
+test_service.py
+
+# Old data-processing scripts
+src/cea_parser.py
+src/data_processor.py
