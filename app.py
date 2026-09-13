@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 
-@st.cache_resource
+# @st.cache_resource
 def load_service():
 
     service = ForecastService(
@@ -53,9 +53,7 @@ st.write(
 
 st.sidebar.header("Forecast Controls")
 
-sites = [
-    "Western_Region_Solar_Park"
-]
+sites = service.get_sites()
 
 selected_site = st.sidebar.selectbox(
     "Select Plant",

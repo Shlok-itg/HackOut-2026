@@ -15,18 +15,7 @@ from src.data_pipeline import preprocess_dataset
 
 TARGET_COLUMN = "AC_POWER_MW"
 
-FEATURE_COLUMNS = [
-    "AMBIENT_TEMPERATURE",
-    "MODULE_TEMPERATURE",
-    "IRRADIATION",
-    "Hour",
-    "DayOfWeek",
-    "Month",
-    "Hour_sin",
-    "Hour_cos",
-    "Month_sin",
-    "Month_cos"
-]
+FEATURE_COLUMNS = ["AMBIENT_TEMPERATURE","MODULE_TEMPERATURE","IRRADIATION","Hour","DayOfWeek","Month","Hour_sin","Hour_cos","Month_sin","Month_cos"]
 
 
 class RenewableForecastModel:
